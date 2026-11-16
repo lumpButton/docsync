@@ -110,6 +110,24 @@ def test_ruff_decides_where_docstrings_are_required() -> None:
     assert missing_docstring_lines(source, SAMPLE / "tests" / "test_m.py", SAMPLE) == set()
 
 
+def test_form_feed_only_for_models_that_reach_openapi() -> None:
+    result: FixResult = _fix(
+        """\
+        class Settings(BaseSettings):
+            app_env: str = "dev"
+            model_config = SettingsConfigDict(env_file=".env")
+
+
+        class LeadIn(BaseModel):
+            name: str
+        """
+    )
+    settings, lead = result.source.split("class LeadIn")
+    assert "\\f" not in settings
+    assert "        model_config: Pydantic model configuration.\n" in settings
+    assert '"""TODO: summary.\n\n    \\f\n    Attributes:' in lead
+
+
 def test_inline_bodies_are_split() -> None:
     result: FixResult = _fix(
         """

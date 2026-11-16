@@ -124,8 +124,8 @@ async def get_lead(
 - **Classes**: `Args` from `__init__`; `Attributes` for public class-level fields, constants,
   enum members and `@property` (marked `Read-only.` without a setter). `@cached_property` gets
   its own one-line docstring. Setters, deleters and `@overload` variants are not documented.
-- **FastAPI**: endpoints (`@router.get(...)` and friends) and Pydantic models put the sections
-  after `\f`, so [FastAPI keeps them out of OpenAPI](https://fastapi.tiangolo.com/advanced/path-operation-advanced-configuration/)
+- **FastAPI**: endpoints (`@router.get(...)` and friends) and Pydantic models (`BaseModel`; not
+  `BaseSettings`, which never reaches OpenAPI) put the sections after `\f`, so [FastAPI keeps them out of OpenAPI](https://fastapi.tiangolo.com/advanced/path-operation-advanced-configuration/)
   and only the summary reaches Swagger. `description=` of `Field`, `Path`, `Query`, `Header`,
   `Body`, ... is copied into the docstring.
 - Long lines are wrapped to ruff's `line-length`.
@@ -179,7 +179,7 @@ treat-property-methods-as-class-attributes = true
 ```yaml
 repos:
   - repo: https://github.com/lumpButton/docsync
-    rev: v0.2.1
+    rev: v0.2.2
     hooks:
       - id: docsync-fix
       - id: docsync-check
@@ -229,8 +229,8 @@ Run `docsync` from the project's virtual environment so that it uses the project
 ## Limitations
 
 - Only Google style and only `"""` docstrings.
-- Pydantic models are recognised by a direct `BaseModel`/`BaseSettings` base; a model that
-  inherits from your own base class does not get `\f`.
+- Pydantic models are recognised by a direct `BaseModel` base (`BaseSettings` for
+  `model_config` only); a model that inherits from your own base class does not get `\f`.
 - A hand-written `Defaults to ...` for a default that is a call (`= Query(5)`) is removed:
   docsync only writes default tails for plain values.
 - `line-length` is read from `[tool.ruff]` in `pyproject.toml` (88 if not set); `ruff.toml` and

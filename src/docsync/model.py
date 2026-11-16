@@ -31,6 +31,8 @@ HTTP_ROUTE_METHODS: frozenset[str] = frozenset(
     {"get", "post", "put", "patch", "delete", "head", "options", "trace", "api_route", "websocket"}
 )
 PYDANTIC_BASES: frozenset[str] = frozenset({"BaseModel", "BaseSettings"})
+# Only these can appear in OpenAPI; settings never do, so their sections need no ``\f``.
+API_MODEL_BASES: frozenset[str] = frozenset({"BaseModel"})
 YIELDING_GENERICS: frozenset[str] = frozenset(
     {"Iterator", "Iterable", "Generator", "AsyncIterator", "AsyncIterable", "AsyncGenerator"}
 )
@@ -187,10 +189,11 @@ def is_api_object(node: Definition) -> bool:
         node (Definition): Function or class.
 
     Returns:
-        bool: True for ``@router.get(...)``-style endpoints and BaseModel/BaseSettings subclasses.
+        bool: True for ``@router.get(...)``-style endpoints and BaseModel subclasses; False for
+            BaseSettings, which never reaches OpenAPI.
     """
     if isinstance(node, ast.ClassDef):
-        return any(last_name(base) in PYDANTIC_BASES for base in node.bases)
+        return any(last_name(base) in API_MODEL_BASES for base in node.bases)
     return any(
         isinstance(decorator, ast.Call)
         and isinstance(decorator.func, ast.Attribute)

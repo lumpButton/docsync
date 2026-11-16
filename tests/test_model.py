@@ -328,7 +328,7 @@ def test_skip_reason(decorator: str, reason: str | None) -> None:
         ("@router.dependency\ndef f() -> None: ...\n", False),
         ("@cache\ndef f() -> None: ...\n", False),
         ("class M(pydantic.BaseModel): ...\n", True),
-        ("class S(BaseSettings): ...\n", True),
+        ("class S(BaseSettings): ...\n", False),  # settings never reach OpenAPI
         ("class D(Base): ...\n", False),
     ],
 )
