@@ -1,0 +1,152 @@
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import StrEnum
+from functools import cached_property
+from typing import ClassVar, NamedTuple, Protocol, TypedDict
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class LeadStatus(StrEnum):
+    """TODO: summary.
+
+    Attributes:
+        NEW: TODO: description.
+        TAKEN: TODO: description.
+        CLOSED: TODO: description.
+    """
+
+    NEW = "new"
+    TAKEN = "taken"
+    CLOSED = "closed"
+
+
+class Lead:
+    """TODO: summary.
+
+    Args:
+        lead_id (int): TODO: description.
+        source (str): TODO: description.
+        phone (str | None): TODO: description. Defaults to `None`.
+
+    Attributes:
+        MAX_CALL_ATTEMPTS (ClassVar[int]): TODO: description.
+        source (str): TODO: description.
+        phone (str | None): TODO: description. Defaults to `None`.
+        normalize (Callable[[str], str]): TODO: description.
+        id (int): TODO: description. Read-only.
+        status (LeadStatus): TODO: description.
+    """
+
+    MAX_CALL_ATTEMPTS: ClassVar[int] = 3
+    source: str
+    phone: str | None = None
+    normalize: Callable[[str], str] = staticmethod(lambda raw: raw.strip().lower())
+    _id: int
+    __slots_hint__ = "dunder: skipped"
+
+    def __init__(self, lead_id: int, source: str, *, phone: str | None = None) -> None:
+        self._id = lead_id
+        self.source = source
+        self.phone = phone
+        self.created_at = datetime.now().astimezone()
+        self._status = LeadStatus.NEW
+
+    @property
+    def id(self) -> int:
+        return self._id
+
+    @property
+    def status(self) -> LeadStatus:
+        return self._status
+
+    @status.setter
+    def status(self, value: LeadStatus) -> None:
+        self._status = value
+
+    @status.deleter
+    def status(self) -> None:
+        self._status = LeadStatus.NEW
+
+    @cached_property
+    def masked_phone(self) -> str:
+        """TODO: summary."""
+        return (self.phone or "")[-4:].rjust(10, "*")
+
+    @property
+    def _internal(self) -> int:
+        return self._id
+
+
+@dataclass(frozen=True, slots=True)
+class Slot:
+    """TODO: summary.
+
+    Attributes:
+        starts_at (datetime): TODO: description.
+        length (timedelta): TODO: description.
+        tags (list[str]): TODO: description.
+        priority (int): TODO: description. Defaults to `0`.
+    """
+
+    starts_at: datetime
+    length: timedelta = timedelta(minutes=15)
+    tags: list[str] = field(default_factory=list)
+    priority: int = 0
+
+
+class LeadIn(BaseModel):
+    """TODO: summary.
+
+    \f
+    Attributes:
+        model_config: Pydantic model configuration.
+        name (str): TODO: description.
+        phone (str): TODO: description.
+        comment (str | None): TODO: description. Defaults to `None`.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(min_length=1, max_length=120)
+    phone: str
+    comment: str | None = None
+
+
+class Point(NamedTuple):
+    """TODO: summary.
+
+    Attributes:
+        lat (float): TODO: description.
+        lon (float): TODO: description. Defaults to `0.0`.
+    """
+
+    lat: float
+    lon: float = 0.0
+
+
+class WebhookPayload(TypedDict):
+    """TODO: summary.
+
+    Attributes:
+        form_id (str): TODO: description.
+        fields (dict[str, str]): TODO: description.
+    """
+
+    form_id: str
+    fields: dict[str, str]
+
+
+class Notifier(Protocol):
+    """TODO: summary.
+
+    Attributes:
+        channel (str): TODO: description.
+        enabled (bool): TODO: description. Read-only.
+    """
+
+    channel: str
+
+    @property
+    def enabled(self) -> bool: ...

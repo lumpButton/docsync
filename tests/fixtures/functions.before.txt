@@ -1,0 +1,144 @@
+from collections.abc import AsyncIterator, Awaitable, Callable, Generator, Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from functools import cached_property
+from typing import Annotated, Protocol, overload, override
+
+from fastapi import Depends, Query
+
+UNFILTERED_LIMIT: int = 50
+
+
+class LeadError(Exception):
+    def __init__(self, lead_id: int, *details: str, retryable: bool = False) -> None:
+        super().__init__(lead_id, *details)
+        self.lead_id = lead_id
+        self.retryable = retryable
+
+
+class LeadConflictError(LeadError):
+    @override
+    def __str__(self) -> str:
+        return f"lead {self.lead_id} is already taken"
+
+
+@dataclass(frozen=True, slots=True)
+class Slot:
+    starts_at: datetime
+    length: timedelta
+
+
+class Clock(Protocol):
+    def now(self) -> datetime: ...
+
+    def schedule(
+        self,
+        lead_id: int,
+        delay: timedelta,
+    ) -> datetime: ...
+
+
+class Repository[T: (int, str)]:
+    normalize: Callable[[str], str] = staticmethod(lambda raw: raw.strip().lower())
+
+    def __init__(
+        self,
+        items: Mapping[T, list[Slot]],
+        /,
+        clock: Clock,
+        *,
+        retry_policy: dict[str, tuple[int, int]] = {  # noqa: B006
+            "telegram_bot_api_rate_limited": (30, 300),
+            "smtp_temporarily_unavailable": (60, 600),
+        },
+        _: object = None,
+    ) -> None:
+        self._items: dict[T, list[Slot]] = dict(items)
+        self._clock = clock
+        self._retry_policy = retry_policy
+        self._cache: dict[T, Slot] | None = None
+
+    @property
+    def size(self) -> int:
+        return len(self._items)
+
+    @property
+    def clock(self) -> Clock:
+        return self._clock
+
+    @clock.setter
+    def clock(self, value: Clock) -> None:
+        self._clock = value
+
+    @cached_property
+    def busiest(self) -> T | None:
+        return max(self._items, key=lambda key: len(self._items[key]), default=None)
+
+    @overload
+    def get(self, key: T) -> list[Slot]: ...
+    @overload
+    def get(self, key: T, default: list[Slot]) -> list[Slot]: ...
+    def get(self, key: T, default: list[Slot] | None = None) -> list[Slot]:
+        try:
+            return self._items[key]
+        except KeyError as err:
+            if default is None:
+                raise err from None
+            return default
+
+    def take(self, key: T, _: int, *, at: datetime | None = None) -> Slot:
+        def fallback() -> Slot:
+            raise RuntimeError("nested scope: not part of take()")
+
+        slots = self.get(key)
+        if not slots:
+            raise LeadConflictError(0, "no free slots")
+        moment = at or self._clock.now()
+        try:
+            return next(slot for slot in slots if slot.starts_at >= moment)
+        except StopIteration, TypeError:
+            if moment.tzinfo is None:
+                raise
+            return fallback()
+
+
+def plan_batches(
+    total: int,
+    size: int = 50,
+) -> Generator[tuple[int, int], None, int]:
+    if size <= 0:
+        raise ValueError(size)
+    sent = 0
+    for start in range(0, total, size):
+        yield start, min(start + size, total)
+        sent += 1
+    return sent
+
+
+async def stream_events(
+    workspace_id: int,
+    *,
+    since: datetime | None = None,
+) -> AsyncIterator[dict[str, list[int]]]:
+    moment = since or datetime.now(UTC)
+    yield {str(workspace_id): [int(moment.timestamp())]}
+
+
+def make_notifier(
+    send: Callable[[int, str], Awaitable[None]],
+) -> Callable[[int], Awaitable[None]]:
+    async def notify(chat_id: int) -> None:
+        await send(chat_id, "new lead")
+
+    return notify
+
+
+async def list_leads(
+    workspace_id: int,
+    clock: Annotated[Clock, Depends()],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    status: Annotated[str | None, Query(pattern="^(new|taken|closed)$")] = None,
+) -> list[dict[str, int | str]]:
+    if limit > UNFILTERED_LIMIT and status is None:
+        raise PermissionError(workspace_id)
+    return [{"id": workspace_id, "at": clock.now().isoformat()}]

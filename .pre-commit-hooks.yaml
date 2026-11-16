@@ -1,0 +1,13 @@
+- id: docsync-fix
+  name: docsync fix
+  description: Add Google docstring templates where ruff requires them and update existing docstrings.
+  entry: docsync fix
+  language: python
+  types: [python]
+
+- id: docsync-check
+  name: docsync check
+  description: Fail on unfilled docstring placeholders and docstrings that are out of date with the code.
+  entry: docsync check
+  language: python
+  types: [python]

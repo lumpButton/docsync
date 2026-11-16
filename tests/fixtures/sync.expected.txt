@@ -1,0 +1,58 @@
+from datetime import datetime
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Path
+from pydantic import BaseModel, Field
+
+router = APIRouter()
+
+
+class LeadOut(BaseModel):
+    """Lead as the cabinet shows it.
+
+    \f
+    Attributes:
+        id (int): Lead number inside the workspace.
+        status (str): Workflow status: new, taken or closed.
+        created_at (datetime): TODO: description.
+        is_new (bool): TODO: description. Read-only.
+    """
+
+    id: int = Field(description="Lead number inside the workspace")
+    status: str
+    created_at: datetime
+
+    @property
+    def is_new(self) -> bool:
+        return self.status == "new"
+
+
+@router.post("/leads/{lead_id}/take")
+async def take_lead(
+    lead_id: Annotated[int, Path(ge=1)],
+    member_id: str,
+    *,
+    force: bool = True,
+) -> LeadOut:
+    """Take a lead and start the call.
+
+    The first member to press «Беру» wins; the others get 409.
+
+    \f
+    Args:
+        lead_id (Annotated[int, Path(ge=1)]): Lead number from the card.
+        member_id (str): TODO: description.
+        force (bool): Take even if it is already taken. Defaults to `True`.
+
+    Returns:
+        LeadOut: The taken lead.
+
+    Raises:
+        HTTPException: TODO: description.
+
+    Example:
+        >>> await take_lead(128, "m-1")
+    """
+    if lead_id < 0:
+        raise HTTPException(409, member_id)
+    return LeadOut(id=lead_id, status="taken" if force else "new", created_at=datetime.now().astimezone())

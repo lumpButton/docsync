@@ -1,0 +1,87 @@
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import StrEnum
+from functools import cached_property
+from typing import ClassVar, NamedTuple, Protocol, TypedDict
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class LeadStatus(StrEnum):
+    NEW = "new"
+    TAKEN = "taken"
+    CLOSED = "closed"
+
+
+class Lead:
+    MAX_CALL_ATTEMPTS: ClassVar[int] = 3
+    source: str
+    phone: str | None = None
+    normalize: Callable[[str], str] = staticmethod(lambda raw: raw.strip().lower())
+    _id: int
+    __slots_hint__ = "dunder: skipped"
+
+    def __init__(self, lead_id: int, source: str, *, phone: str | None = None) -> None:
+        self._id = lead_id
+        self.source = source
+        self.phone = phone
+        self.created_at = datetime.now().astimezone()
+        self._status = LeadStatus.NEW
+
+    @property
+    def id(self) -> int:
+        return self._id
+
+    @property
+    def status(self) -> LeadStatus:
+        return self._status
+
+    @status.setter
+    def status(self, value: LeadStatus) -> None:
+        self._status = value
+
+    @status.deleter
+    def status(self) -> None:
+        self._status = LeadStatus.NEW
+
+    @cached_property
+    def masked_phone(self) -> str:
+        return (self.phone or "")[-4:].rjust(10, "*")
+
+    @property
+    def _internal(self) -> int:
+        return self._id
+
+
+@dataclass(frozen=True, slots=True)
+class Slot:
+    starts_at: datetime
+    length: timedelta = timedelta(minutes=15)
+    tags: list[str] = field(default_factory=list)
+    priority: int = 0
+
+
+class LeadIn(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(min_length=1, max_length=120)
+    phone: str
+    comment: str | None = None
+
+
+class Point(NamedTuple):
+    lat: float
+    lon: float = 0.0
+
+
+class WebhookPayload(TypedDict):
+    form_id: str
+    fields: dict[str, str]
+
+
+class Notifier(Protocol):
+    channel: str
+
+    @property
+    def enabled(self) -> bool: ...

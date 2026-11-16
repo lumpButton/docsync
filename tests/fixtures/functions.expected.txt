@@ -1,0 +1,264 @@
+from collections.abc import AsyncIterator, Awaitable, Callable, Generator, Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from functools import cached_property
+from typing import Annotated, Protocol, overload, override
+
+from fastapi import Depends, Query
+
+UNFILTERED_LIMIT: int = 50
+
+
+class LeadError(Exception):
+    """TODO: summary.
+
+    Args:
+        lead_id (int): TODO: description.
+        *details (str): TODO: description.
+        retryable (bool): TODO: description. Defaults to `False`.
+    """
+
+    def __init__(self, lead_id: int, *details: str, retryable: bool = False) -> None:
+        super().__init__(lead_id, *details)
+        self.lead_id = lead_id
+        self.retryable = retryable
+
+
+class LeadConflictError(LeadError):
+    """TODO: summary."""
+
+    @override
+    def __str__(self) -> str:
+        return f"lead {self.lead_id} is already taken"
+
+
+@dataclass(frozen=True, slots=True)
+class Slot:
+    """TODO: summary.
+
+    Attributes:
+        starts_at (datetime): TODO: description.
+        length (timedelta): TODO: description.
+    """
+
+    starts_at: datetime
+    length: timedelta
+
+
+class Clock(Protocol):
+    """TODO: summary."""
+
+    def now(self) -> datetime:
+        """TODO: summary.
+
+        Returns:
+            datetime: TODO: description.
+        """
+
+    def schedule(
+        self,
+        lead_id: int,
+        delay: timedelta,
+    ) -> datetime:
+        """TODO: summary.
+
+        Args:
+            lead_id (int): TODO: description.
+            delay (timedelta): TODO: description.
+
+        Returns:
+            datetime: TODO: description.
+        """
+
+
+class Repository[T: (int, str)]:
+    """TODO: summary.
+
+    Args:
+        items (Mapping[T, list[Slot]]): TODO: description.
+        clock (Clock): TODO: description.
+        retry_policy (dict[str, tuple[int, int]]): TODO: description.
+
+    Attributes:
+        normalize (Callable[[str], str]): TODO: description.
+        size (int): TODO: description. Read-only.
+        clock (Clock): TODO: description.
+    """
+
+    normalize: Callable[[str], str] = staticmethod(lambda raw: raw.strip().lower())
+
+    def __init__(
+        self,
+        items: Mapping[T, list[Slot]],
+        /,
+        clock: Clock,
+        *,
+        retry_policy: dict[str, tuple[int, int]] = {  # noqa: B006
+            "telegram_bot_api_rate_limited": (30, 300),
+            "smtp_temporarily_unavailable": (60, 600),
+        },
+        _: object = None,
+    ) -> None:
+        self._items: dict[T, list[Slot]] = dict(items)
+        self._clock = clock
+        self._retry_policy = retry_policy
+        self._cache: dict[T, Slot] | None = None
+
+    @property
+    def size(self) -> int:
+        return len(self._items)
+
+    @property
+    def clock(self) -> Clock:
+        return self._clock
+
+    @clock.setter
+    def clock(self, value: Clock) -> None:
+        self._clock = value
+
+    @cached_property
+    def busiest(self) -> T | None:
+        """TODO: summary."""
+        return max(self._items, key=lambda key: len(self._items[key]), default=None)
+
+    @overload
+    def get(self, key: T) -> list[Slot]: ...
+    @overload
+    def get(self, key: T, default: list[Slot]) -> list[Slot]: ...
+    def get(self, key: T, default: list[Slot] | None = None) -> list[Slot]:
+        """TODO: summary.
+
+        Args:
+            key (T): TODO: description.
+            default (list[Slot] | None): TODO: description. Defaults to `None`.
+
+        Returns:
+            list[Slot]: TODO: description.
+
+        Raises:
+            KeyError: TODO: description.
+        """
+        try:
+            return self._items[key]
+        except KeyError as err:
+            if default is None:
+                raise err from None
+            return default
+
+    def take(self, key: T, _: int, *, at: datetime | None = None) -> Slot:
+        """TODO: summary.
+
+        Args:
+            key (T): TODO: description.
+            at (datetime | None): TODO: description. Defaults to `None`.
+
+        Returns:
+            Slot: TODO: description.
+
+        Raises:
+            LeadConflictError: TODO: description.
+            StopIteration: TODO: description.
+            TypeError: TODO: description.
+        """
+        def fallback() -> Slot:
+            raise RuntimeError("nested scope: not part of take()")
+
+        slots = self.get(key)
+        if not slots:
+            raise LeadConflictError(0, "no free slots")
+        moment = at or self._clock.now()
+        try:
+            return next(slot for slot in slots if slot.starts_at >= moment)
+        except StopIteration, TypeError:
+            if moment.tzinfo is None:
+                raise
+            return fallback()
+
+
+def plan_batches(
+    total: int,
+    size: int = 50,
+) -> Generator[tuple[int, int], None, int]:
+    """TODO: summary.
+
+    Args:
+        total (int): TODO: description.
+        size (int): TODO: description. Defaults to `50`.
+
+    Returns:
+        int: TODO: description.
+
+    Yields:
+        tuple[int, int]: TODO: description.
+
+    Raises:
+        ValueError: TODO: description.
+    """
+    if size <= 0:
+        raise ValueError(size)
+    sent = 0
+    for start in range(0, total, size):
+        yield start, min(start + size, total)
+        sent += 1
+    return sent
+
+
+async def stream_events(
+    workspace_id: int,
+    *,
+    since: datetime | None = None,
+) -> AsyncIterator[dict[str, list[int]]]:
+    """TODO: summary.
+
+    Args:
+        workspace_id (int): TODO: description.
+        since (datetime | None): TODO: description. Defaults to `None`.
+
+    Yields:
+        dict[str, list[int]]: TODO: description.
+    """
+    moment = since or datetime.now(UTC)
+    yield {str(workspace_id): [int(moment.timestamp())]}
+
+
+def make_notifier(
+    send: Callable[[int, str], Awaitable[None]],
+) -> Callable[[int], Awaitable[None]]:
+    """TODO: summary.
+
+    Args:
+        send (Callable[[int, str], Awaitable[None]]): TODO: description.
+
+    Returns:
+        Callable[[int], Awaitable[None]]: TODO: description.
+    """
+    async def notify(chat_id: int) -> None:
+        await send(chat_id, "new lead")
+
+    return notify
+
+
+async def list_leads(
+    workspace_id: int,
+    clock: Annotated[Clock, Depends()],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    status: Annotated[str | None, Query(pattern="^(new|taken|closed)$")] = None,
+) -> list[dict[str, int | str]]:
+    """TODO: summary.
+
+    Args:
+        workspace_id (int): TODO: description.
+        clock (Annotated[Clock, Depends()]): TODO: description.
+        limit (Annotated[int, Query(ge=1, le=100)]): TODO: description. Defaults to `20`.
+        status (Annotated[str | None, Query(pattern="^(new|taken|closed)$")]): TODO: description.
+            Defaults to `None`.
+
+    Returns:
+        list[dict[str, int | str]]: TODO: description.
+
+    Raises:
+        PermissionError: TODO: description.
+    """
+    if limit > UNFILTERED_LIMIT and status is None:
+        raise PermissionError(workspace_id)
+    return [{"id": workspace_id, "at": clock.now().isoformat()}]
