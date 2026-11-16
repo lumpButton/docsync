@@ -179,7 +179,7 @@ treat-property-methods-as-class-attributes = true
 ```yaml
 repos:
   - repo: https://github.com/lumpButton/docsync
-    rev: v0.2.0
+    rev: v0.2.1
     hooks:
       - id: docsync-fix
       - id: docsync-check

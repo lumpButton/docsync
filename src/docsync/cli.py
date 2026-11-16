@@ -167,14 +167,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     at.add_argument("--stdin-filename", required=True)
     at.add_argument("source", choices=["-"])
     args: argparse.Namespace = parser.parse_args(argv)
-    if args.command == "fix":
-        return command_fix(args.paths, args.stdin_filename)
-    if args.command == "check":
-        return command_check(args.paths)
-    if args.command == "version":
-        sys.stdout.write(f"docsync {version('docsync')}\n")
-        return 0
-    return command_at(args.line, args.stdin_filename)
+    try:
+        if args.command == "fix":
+            return command_fix(args.paths, args.stdin_filename)
+        if args.command == "check":
+            return command_check(args.paths)
+        if args.command == "version":
+            sys.stdout.write(f"docsync {version('docsync')}\n")
+            return 0
+        return command_at(args.line, args.stdin_filename)
+    except RuntimeError as err:
+        # expected failures (ruff errors, refused edits) get one line, not a traceback
+        sys.stderr.write(f"docsync: {err}\n")
+        return 2
 
 
 if __name__ == "__main__":

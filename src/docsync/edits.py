@@ -455,11 +455,43 @@ def _warn_undeclared(source: str, path: Path, node: ast.ClassDef) -> Diagnostic 
     return Diagnostic(path, node.lineno, node.col_offset + 1, "DSW001", message)
 
 
+def _parse(source: str) -> ast.Module | None:
+    """Parse a module; None when it is not valid Python."""
+    try:
+        return ast.parse(source)
+    except SyntaxError:
+        return None
+
+
 def fix_source(source: str, path: Path, length: int, missing: set[int]) -> FixResult:
     """Add templates where ruff requires a docstring and update existing docstrings.
 
+    Source that does not parse is returned unchanged: unfinished code is the normal state
+    while editing. Edits that would break the code raise ``RuntimeError`` instead of returning.
+
     Args:
         source (str): Module source.
+        path (Path): File name for messages.
+        length (int): Maximum line length.
+        missing (set[int]): Lines of definitions without a required docstring (from ruff).
+
+    Returns:
+        FixResult: New source, counters and warnings.
+    """
+    tree: ast.Module | None = _parse(source)
+    if tree is None:
+        return FixResult(source)
+    return _fix_module(source, tree, path, length, missing)
+
+
+def _fix_module(
+    source: str, tree: ast.Module, path: Path, length: int, missing: set[int]
+) -> FixResult:
+    """Do :func:`fix_source` for a parsed module.
+
+    Args:
+        source (str): Module source.
+        tree (ast.Module): Parsed module.
         path (Path): File name for messages.
         length (int): Maximum line length.
         missing (set[int]): Lines of definitions without a required docstring (from ruff).
@@ -470,9 +502,8 @@ def fix_source(source: str, path: Path, length: int, missing: set[int]) -> FixRe
     Raises:
         RuntimeError: The edits would produce code that does not parse; nothing is returned.
     """
-    tree: ast.Module = ast.parse(source)
-    lines: list[str] = source.split("\n")
     result: FixResult = FixResult(source)
+    lines: list[str] = source.split("\n")
     edits: list[Edit] = []
     methods: set[ast.AST] = method_nodes(tree)
     for node in definitions(tree):
@@ -516,9 +547,12 @@ def find_placeholders(source: str, path: Path) -> list[Diagnostic]:
         path (Path): File name for messages.
 
     Returns:
-        list[Diagnostic]: One per docstring line with a placeholder.
+        list[Diagnostic]: One per docstring line with a placeholder; none when the source does
+            not parse (syntax errors are the linter's job).
     """
-    tree: ast.Module = ast.parse(source)
+    tree: ast.Module | None = _parse(source)
+    if tree is None:
+        return []
     lines: list[str] = source.split("\n")
     nodes: list[ast.Module | Definition] = [tree, *definitions(tree)]
     found: list[Diagnostic] = []
@@ -552,9 +586,12 @@ def find_outdated(source: str, path: Path, length: int) -> list[Diagnostic]:
         length (int): Maximum line length.
 
     Returns:
-        list[Diagnostic]: One per outdated docstring, at the docstring.
+        list[Diagnostic]: One per outdated docstring, at the docstring; none when the source
+            does not parse.
     """
-    tree: ast.Module = ast.parse(source)
+    tree: ast.Module | None = _parse(source)
+    if tree is None:
+        return []
     lines: list[str] = source.split("\n")
     found: list[Diagnostic] = []
     methods: set[ast.AST] = method_nodes(tree)

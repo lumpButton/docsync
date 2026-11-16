@@ -126,6 +126,39 @@ def test_fix_stdin(
     assert "pass" not in captured.out
 
 
+def test_unfinished_code_is_left_alone(
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(project)
+    unfinished: str = "from pydantic_settings import\n\ndef send(chat_id: int) -> None:\n    pass\n"
+    monkeypatch.setattr("sys.stdin", io.StringIO(unfinished))
+    assert main(["fix", "--stdin-filename", "app/send.py", "-"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == unfinished
+    assert captured.err == ""
+
+    (project / "app" / "broken.py").write_text(unfinished, encoding="utf-8")
+    assert main(["fix", "app/broken.py"]) == 0
+    assert (project / "app" / "broken.py").read_text(encoding="utf-8") == unfinished
+    assert main(["check", "app/broken.py"]) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_expected_failure_is_one_line(
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse(*_: object, **__: object) -> None:
+        raise RuntimeError("app/send.py: docstring edits would break the code")
+
+    monkeypatch.chdir(project)
+    monkeypatch.setattr("docsync.cli.fix_source", refuse)
+    monkeypatch.setattr("sys.stdin", io.StringIO(CODE))
+    assert main(["fix", "--stdin-filename", "app/send.py", "-"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "docsync: app/send.py: docstring edits would break the code\n"
+
+
 def test_install_and_run_without_configuring_ruff(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
