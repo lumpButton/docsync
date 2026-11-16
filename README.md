@@ -45,6 +45,23 @@ pip install "docsync @ git+https://github.com/lumpButton/docsync"
 
 ruff is installed with it; docsync calls ruff from the same environment.
 
+## No setup needed
+
+Out of the box ruff does not ask for docstrings at all, so docsync does not rely on your ruff
+config being ready:
+
+- **ruff not configured for docstrings** (the default): docsync turns on `D101`, `D102`,
+  `D103` and `D106` for its own query. Public classes, methods, functions and nested classes
+  get templates; private names, `__init__`, magic methods and `@override` methods do not. Test
+  files (`tests/`, `test/`, `test_*.py`, `*_test.py`, `conftest.py`) are left alone. Your
+  `per-file-ignores` still apply.
+- **ruff configured for docstrings** (it reports `D101`/`D102`/`D103` for the file): your
+  config is followed as is, including `ignore`, `per-file-ignores` and `ignore-decorators`.
+
+docsync tells the two apart per file by asking ruff about a small probe with an undocumented
+public class, method and function. To lint docstrings with ruff and pydoclint as well, see
+[Recommended ruff and pydoclint setup](#recommended-ruff-and-pydoclint-setup).
+
 ## Usage
 
 ```bash
@@ -69,7 +86,8 @@ ruff check --fix && docsync fix && ruff format && docsync check
 | `DSW001` | Public `self.x` assigned only in `__init__` cannot be documented in `Attributes`  | no            |
 | `DSW002` | A body written after `:` on several lines; move it to its own lines by hand       | no            |
 
-Missing docstrings are reported by ruff itself (`D1xx`), not by docsync.
+Missing docstrings are reported by ruff (`D1xx`) once you enable its docstring rules; `check`
+covers placeholders and outdated docstrings.
 
 ## What it writes
 
@@ -161,7 +179,7 @@ treat-property-methods-as-class-attributes = true
 ```yaml
 repos:
   - repo: https://github.com/lumpButton/docsync
-    rev: v0.1.0
+    rev: v0.2.0
     hooks:
       - id: docsync-fix
       - id: docsync-check

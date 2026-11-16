@@ -1,7 +1,9 @@
 """Line edits that add docstring templates and keep existing docstrings in sync with the code.
 
 Where a docstring is required is decided by ruff itself (D101, D102, D103, D106), so the rules
-and exceptions (private names, ``@override``, ``@property``, tests) are never duplicated here.
+and exceptions (private names, ``@override``, ``@property``, per-file ignores) are never
+duplicated here. A project whose ruff config does not ask for docstrings gets those four rules
+switched on for docsync's query, tests excluded.
 """
 
 import ast
@@ -26,6 +28,10 @@ from docsync.model import (
 )
 
 MISSING_DOCSTRING_CODES: frozenset[str] = frozenset({"D101", "D102", "D103", "D106"})
+# Undocumented public class, method and function: ruff flags them when docstrings are required.
+PROBE: str = (
+    "class Probe:\n    def probe(self) -> None:\n        pass\n\n\ndef probe() -> None:\n    pass\n"
+)
 PLACEHOLDER: re.Pattern[str] = re.compile(r"\bTODO\b")
 DEFAULT_LINE_LENGTH: int = 88
 INDENT_STEP: str = "    "
@@ -140,20 +146,29 @@ def line_length(root: Path) -> int:
     return value if isinstance(value, int) else DEFAULT_LINE_LENGTH
 
 
-def missing_docstring_lines(source: str, path: Path, root: Path) -> set[int]:
-    """Lines of definitions for which ruff reports a missing docstring.
+def is_test_file(path: Path, root: Path) -> bool:
+    """Tell whether a file is a test: under ``tests``/``test``, ``test_*.py``, ``*_test.py``.
 
     Args:
-        source (str): Module source.
-        path (Path): File name for ruff's configuration and per-file ignores.
-        root (Path): Project root to run ruff from.
+        path (Path): The file.
+        root (Path): Project root; directories above it are not looked at.
 
     Returns:
-        set[int]: 1-based lines of ``def`` / ``class`` keywords.
-
-    Raises:
-        RuntimeError: ruff could not be run or produced no JSON.
+        bool: True for test modules and ``conftest.py``.
     """
+    resolved: Path = path.resolve()
+    relative: Path = (
+        resolved.relative_to(root) if resolved.is_relative_to(root) else Path(path.name)
+    )
+    name: str = relative.name
+    in_tests: bool = any(part in {"tests", "test"} for part in relative.parts[:-1])
+    return (
+        in_tests or name.startswith("test_") or name.endswith("_test.py") or name == "conftest.py"
+    )
+
+
+def _missing_docstrings(source: str, path: Path, root: Path, extra: list[str]) -> set[int]:
+    """Run ruff on ``source`` as if it were ``path``; lines with D101/D102/D103/D106 findings."""
     command: list[str] = [
         sys.executable,
         "-m",
@@ -163,6 +178,7 @@ def missing_docstring_lines(source: str, path: Path, root: Path) -> set[int]:
         "json",
         "--no-fix",
         "--quiet",
+        *extra,
         "--stdin-filename",
         str(path.resolve()),  # ruff runs in the project root: per-file ignores need the real path
         "-",
@@ -185,6 +201,46 @@ def missing_docstring_lines(source: str, path: Path, root: Path) -> set[int]:
             if isinstance(row, int):
                 lines.add(row)
     return lines
+
+
+def docstrings_configured(path: Path, root: Path) -> bool:
+    """Tell whether the project's ruff config requires docstrings for this file.
+
+    A probe with an undocumented public class, method and function is checked as if it were
+    ``path``, so ``select``, ``ignore`` and ``per-file-ignores`` all count.
+
+    Args:
+        path (Path): The file.
+        root (Path): Project root.
+
+    Returns:
+        bool: True when ruff reports any of D101, D102, D103 for the probe.
+    """
+    return bool(_missing_docstrings(PROBE, path, root, []))
+
+
+def missing_docstring_lines(source: str, path: Path, root: Path) -> set[int]:
+    """Lines of definitions that need a docstring.
+
+    When the project's ruff config requires docstrings, ruff decides with that config as is.
+    Otherwise docsync asks ruff for D101, D102, D103 and D106 itself (public classes, methods,
+    functions and nested classes) and leaves test files alone, so it works without any setup.
+
+    Args:
+        source (str): Module source.
+        path (Path): File name for ruff's configuration and per-file ignores.
+        root (Path): Project root to run ruff from.
+
+    Returns:
+        set[int]: 1-based lines of ``def`` / ``class`` keywords.
+    """
+    if docstrings_configured(path, root):
+        return _missing_docstrings(source, path, root, [])
+    if is_test_file(path, root):
+        return set()
+    return _missing_docstrings(
+        source, path, root, ["--extend-select", ",".join(sorted(MISSING_DOCSTRING_CODES))]
+    )
 
 
 def definitions(tree: ast.Module) -> Iterator[Definition]:

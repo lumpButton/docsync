@@ -126,6 +126,26 @@ def test_fix_stdin(
     assert "pass" not in captured.out
 
 
+def test_install_and_run_without_configuring_ruff(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A project with no ruff docstring rules: fix still works, tests are left alone."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'plain'\n", encoding="utf-8")
+    (tmp_path / "app").mkdir()
+    (tmp_path / "tests").mkdir()
+    module: Path = tmp_path / "app" / "send.py"
+    test_module: Path = tmp_path / "tests" / "test_send.py"
+    module.write_text(CODE, encoding="utf-8")
+    test_module.write_text(CODE, encoding="utf-8")
+
+    assert main(["fix"]) == 0
+    assert "1 file(s) changed" in capsys.readouterr().out
+    assert '"""TODO: summary.' in module.read_text(encoding="utf-8")
+    assert test_module.read_text(encoding="utf-8") == CODE
+    assert main(["check"]) == 1
+
+
 def test_at_prints_json(
     project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

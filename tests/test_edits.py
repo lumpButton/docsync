@@ -10,9 +10,11 @@ from docsync.edits import (
     Diagnostic,
     FixResult,
     action_at,
+    docstrings_configured,
     find_outdated,
     find_placeholders,
     fix_source,
+    is_test_file,
     line_length,
     missing_docstring_lines,
     project_root,
@@ -388,6 +390,85 @@ def test_ruff_sees_the_real_path_from_any_cwd(monkeypatch: pytest.MonkeyPatch) -
     source: str = "def test_x() -> None:\n    pass\n"
     assert missing_docstring_lines(source, Path("project/tests/test_x.py"), SAMPLE) == set()
     assert missing_docstring_lines(source, Path("project/app/x.py"), SAMPLE) == {1}
+
+
+UNDOCUMENTED: str = textwrap.dedent(
+    """
+    class Lead:
+        def __init__(self) -> None:
+            pass
+
+        def __repr__(self) -> str:
+            return ""
+
+        def take(self) -> None:
+            pass
+
+        def _secret(self) -> None:
+            pass
+
+    def find() -> None:
+        pass
+
+    def _helper() -> None:
+        pass
+    """
+)
+
+
+def _project(tmp_path: Path, ruff: str) -> Path:
+    (tmp_path / "pyproject.toml").write_text(f"[project]\nname = 'x'\n{ruff}", encoding="utf-8")
+    return tmp_path
+
+
+def test_works_without_any_ruff_docstring_setup(tmp_path: Path) -> None:
+    root: Path = _project(tmp_path, "")
+    app: Path = root / "app" / "lead.py"
+    assert not docstrings_configured(app, root)
+    # public class, method and function; not __init__, magic or private ones
+    assert missing_docstring_lines(UNDOCUMENTED, app, root) == {2, 9, 15}
+    for test_file in ("tests/test_lead.py", "pkg/tests/helpers.py", "test_x.py", "x_test.py"):
+        assert missing_docstring_lines(UNDOCUMENTED, root / test_file, root) == set(), test_file
+    assert missing_docstring_lines(UNDOCUMENTED, root / "conftest.py", root) == set()
+
+
+def test_a_configured_project_is_followed_as_is(tmp_path: Path) -> None:
+    root: Path = _project(
+        tmp_path,
+        '[tool.ruff.lint]\nselect = ["D"]\nignore = ["D102"]\n'
+        '[tool.ruff.lint.per-file-ignores]\n"migrations/*" = ["D"]\n',
+    )
+    app: Path = root / "app" / "lead.py"
+    assert docstrings_configured(app, root)
+    assert missing_docstring_lines(UNDOCUMENTED, app, root) == {2, 15}  # D102 is ignored
+    # a per-file ignore is respected, also on the fallback path
+    assert missing_docstring_lines(UNDOCUMENTED, root / "migrations" / "m.py", root) == set()
+    # tests are not excluded by name when the project selects D for them
+    assert missing_docstring_lines(UNDOCUMENTED, root / "tests" / "test_x.py", root) == {2, 15}
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("tests/test_a.py", True),
+        ("tests/helpers.py", True),
+        ("src/pkg/test/data.py", True),
+        ("test_a.py", True),
+        ("a_test.py", True),
+        ("conftest.py", True),
+        ("app/attest.py", False),
+        ("app/contest.py", False),
+        ("app/testing.py", False),
+        ("latest/a.py", False),
+    ],
+)
+def test_is_test_file(tmp_path: Path, name: str, expected: bool) -> None:
+    assert is_test_file(tmp_path / name, tmp_path) is expected
+    # directories above the project root do not count
+    assert (
+        is_test_file(tmp_path / "tests" / "proj" / "app" / "a.py", tmp_path / "tests" / "proj")
+        is False
+    )
 
 
 def test_nested_public_class_is_required() -> None:
