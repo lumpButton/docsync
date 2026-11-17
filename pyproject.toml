@@ -1,6 +1,6 @@
 [project]
 name = "docsync"
-version = "0.2.3"
+version = "0.2.4"
 description = "Keep Google-style Python docstrings in sync with the code: templates, updates and a placeholder check next to ruff."
 readme = "README.md"
 license = "MIT"

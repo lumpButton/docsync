@@ -8,7 +8,8 @@ Examples::
     docsync at --line 42 --stdin-filename app/x.py -   # JSON for an editor action
 
 Directories are walked recursively for ``*.py``; hidden directories (``.venv``, ``.git``,
-caches) and ``__pycache__``, ``node_modules``, ``build``, ``dist`` are skipped.
+caches) and ``__pycache__``, ``node_modules``, ``build``, ``dist`` are skipped, and so are
+files the project's ruff config excludes; the stdin source of an excluded file is returned as is.
 """
 
 import argparse
@@ -22,6 +23,7 @@ from docsync.edits import (
     Diagnostic,
     FixResult,
     action_at,
+    excluded_by_ruff,
     find_outdated,
     find_placeholders,
     fix_source,
@@ -41,8 +43,10 @@ def _skipped(part: str) -> bool:
 def _python_files(targets: Sequence[str]) -> Iterator[Path]:
     """Expand files and directories into Python files, in a stable order.
 
-    Only the part of a path below the given directory is checked for skipped directories, so
-    ``..`` or a hidden directory named explicitly still works.
+    Like ruff, files found while walking a directory are skipped when the project's ruff config
+    excludes them, while a file or directory named explicitly is processed anyway. Only the part
+    of a path below the given directory is checked for skipped directories, so ``..`` or a hidden
+    directory named explicitly still works.
 
     Args:
         targets (Sequence[str]): Files and directories from the command line.
@@ -53,10 +57,12 @@ def _python_files(targets: Sequence[str]) -> Iterator[Path]:
     for target in targets:
         path: Path = Path(target)
         if path.is_dir():
+            named_excluded: bool = excluded_by_ruff(path / "__probe__.py", project_root(path))
             yield from sorted(
                 file
                 for file in path.rglob("*.py")
                 if not any(_skipped(part) for part in file.relative_to(path).parts[:-1])
+                and (named_excluded or not excluded_by_ruff(file, project_root(file)))
             )
         else:
             yield path
@@ -86,7 +92,10 @@ def command_fix(paths: Sequence[str], stdin_filename: str | None) -> int:
         int: Exit code: 0 on success.
     """
     if list(paths) == ["-"]:
-        result: FixResult = _fix(Path(stdin_filename or "stdin.py"), sys.stdin.read())
+        stdin_path: Path = Path(stdin_filename or "stdin.py")
+        stdin_source: str = sys.stdin.read()
+        excluded: bool = excluded_by_ruff(stdin_path, project_root(stdin_path))
+        result: FixResult = FixResult(stdin_source) if excluded else _fix(stdin_path, stdin_source)
         sys.stdout.write(result.source)
         _write(sys.stderr, result.warnings)
         return 0

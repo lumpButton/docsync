@@ -126,6 +126,31 @@ def test_fix_stdin(
     assert "pass" not in captured.out
 
 
+def test_files_excluded_by_ruff_are_left_alone(
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(project)
+    (project / "migrations").mkdir()
+    excluded: Path = project / "migrations" / "env.py"
+    excluded.write_text(CODE + '\n\ndef old() -> None:\n    """TODO: summary."""\n', "utf-8")
+    monkeypatch.setattr("sys.stdin", io.StringIO(CODE))
+    assert main(["fix", "--stdin-filename", "migrations/env.py", "-"]) == 0
+    assert capsys.readouterr().out == CODE  # the editor's on-save pass adds nothing
+
+    before: str = excluded.read_text(encoding="utf-8")
+    assert main(["fix"]) == 0  # walking the project skips it, as ruff does
+    assert excluded.read_text(encoding="utf-8") == before
+    assert main(["check"]) == 0  # its placeholder is not reported
+    capsys.readouterr()
+
+    assert main(["check", "migrations/env.py"]) == 1  # named explicitly: checked, as in ruff
+    assert " DSP001 " in capsys.readouterr().out
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(CODE))
+    assert main(["fix", "--stdin-filename", "app/send.py", "-"]) == 0
+    assert '"""TODO: summary.' in capsys.readouterr().out  # other files are still handled
+
+
 def test_unfinished_code_is_left_alone(
     project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

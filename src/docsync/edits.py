@@ -32,6 +32,7 @@ MISSING_DOCSTRING_CODES: frozenset[str] = frozenset({"D101", "D102", "D103", "D1
 PROBE: str = (
     "class Probe:\n    def probe(self) -> None:\n        pass\n\n\ndef probe() -> None:\n    pass\n"
 )
+EXCLUDE_PROBE: str = "undefined_name\n"
 PLACEHOLDER: re.Pattern[str] = re.compile(r"\bTODO\b")
 DEFAULT_LINE_LENGTH: int = 88
 INDENT_STEP: str = "    "
@@ -167,8 +168,8 @@ def is_test_file(path: Path, root: Path) -> bool:
     )
 
 
-def _missing_docstrings(source: str, path: Path, root: Path, extra: list[str]) -> set[int]:
-    """Run ruff on ``source`` as if it were ``path``; lines with D101/D102/D103/D106 findings."""
+def _ruff(source: str, path: Path, root: Path, extra: list[str]) -> list[dict[str, object]]:
+    """Run ``ruff check`` on ``source`` as if it were ``path``; its JSON diagnostics."""
     command: list[str] = [
         sys.executable,
         "-m",
@@ -193,6 +194,29 @@ def _missing_docstrings(source: str, path: Path, root: Path, extra: list[str]) -
         diagnostics: list[dict[str, object]] = json.loads(result.stdout or "[]")
     except json.JSONDecodeError as err:
         raise RuntimeError(f"ruff failed: {result.stderr.strip()}") from err
+    return diagnostics
+
+
+def excluded_by_ruff(path: Path, root: Path) -> bool:
+    """Tell whether the project's ruff config excludes this file (`exclude`, `extend-exclude`).
+
+    docsync leaves such files alone, like ruff does. ruff ignores its exclusions for a source
+    given on stdin unless `--force-exclude` is passed, so a probe with an undefined name is
+    checked with it: an excluded file gets no finding.
+
+    Args:
+        path (Path): The file.
+        root (Path): Project root.
+
+    Returns:
+        bool: True when ruff skips the file.
+    """
+    return not _ruff(EXCLUDE_PROBE, path, root, ["--force-exclude", "--select", "F821"])
+
+
+def _missing_docstrings(source: str, path: Path, root: Path, extra: list[str]) -> set[int]:
+    """Run ruff on ``source`` as if it were ``path``; lines with D101/D102/D103/D106 findings."""
+    diagnostics: list[dict[str, object]] = _ruff(source, path, root, extra)
     lines: set[int] = set()
     for diagnostic in diagnostics:
         location: object = diagnostic.get("location")

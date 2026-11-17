@@ -5,6 +5,7 @@ version = "0"
 
 [tool.ruff]
 line-length = 100
+extend-exclude = ["migrations"]
 
 [tool.ruff.lint]
 select = ["D"]

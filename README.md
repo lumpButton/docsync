@@ -73,6 +73,11 @@ docsync check                # exit 1 on placeholders or outdated docstrings
 Directories are walked recursively for `*.py`. Hidden directories (`.venv`, `.git`, caches),
 `__pycache__`, `node_modules`, `build` and `dist` are skipped unless you name them.
 
+Files excluded in your ruff config (`exclude`, `extend-exclude`, e.g. generated Alembic
+migrations) are treated the way ruff treats them: skipped while walking a directory, processed
+when named explicitly, and never touched by the editor integration (`fix -` on stdin behaves like
+ruff's `--force-exclude`).
+
 A typical sequence, locally or in CI:
 
 ```bash
@@ -180,7 +185,7 @@ treat-property-methods-as-class-attributes = true
 ```yaml
 repos:
   - repo: https://github.com/lumpButton/docsync
-    rev: v0.2.3
+    rev: v0.2.4
     hooks:
       - id: docsync-fix
       - id: docsync-check
