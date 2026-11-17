@@ -156,6 +156,7 @@ def test_unknown_sections_and_form_feed_keep_their_place() -> None:
         "    take(1)",
         "",
         "\\f",
+        "",
         "Args:",
         "    x (int): X.",
         f"    y (str): {DESCRIPTION_PLACEHOLDER}",
@@ -202,7 +203,14 @@ def test_render_new_docstring() -> None:
 
 def test_render_api_object_puts_sections_after_form_feed() -> None:
     model: Model = _model(Section("Args", (_arg("x", "int"),)), api=True)
-    assert render_docstring(model, "", 100)[:4] == [f'"""{SUMMARY_PLACEHOLDER}', "", "\\f", "Args:"]
+    # a blank line after \f: ruff does not see a section right on the next line
+    assert render_docstring(model, "", 100)[:5] == [
+        f'"""{SUMMARY_PLACEHOLDER}',
+        "",
+        "\\f",
+        "",
+        "Args:",
+    ]
     assert render_docstring(_model(api=True), "", 100) == [f'"""{SUMMARY_PLACEHOLDER}"""']
 
 
@@ -229,6 +237,7 @@ def test_render_update_keeps_human_text() -> None:
         "Markdown **for** Swagger.",
         "",
         "\\f",
+        "",
         "Arguments:",  # the title as written
         "    lead_id (Annotated[int, Path(ge=1)]): Lead number",  # unchanged entry: wrap kept
         "        from the card.",
@@ -281,7 +290,7 @@ def test_render_snippet_numbers_fields_and_escapes() -> None:
     lines: list[str] = render_docstring(model, "", 100, mode="snippet")
     assert lines[0] == f'"""${{1:{SUMMARY_PLACEHOLDER}}}'
     assert lines[2] == "\\\\f"
-    assert lines[4] == "    price (Money): ${2:Cost in \\$.} Defaults to `{'\\$': 1\\}`."
+    assert lines[5] == "    price (Money): ${2:Cost in \\$.} Defaults to `{'\\$': 1\\}`."
 
 
 def test_escape_snippet() -> None:

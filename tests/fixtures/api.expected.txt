@@ -11,6 +11,7 @@ class LeadIn(BaseModel):
     """TODO: summary.
 
     \f
+
     Attributes:
         model_config: Pydantic model configuration.
         MAX_COMMENT (ClassVar[int]): TODO: description.
@@ -31,6 +32,7 @@ class LeadOut(BaseModel):
     """TODO: summary.
 
     \f
+
     Attributes:
         id (int): Lead number inside the workspace.
         status (str): TODO: description.
@@ -70,6 +72,7 @@ async def get_lead(
     """TODO: summary.
 
     \f
+
     Args:
         workspace_id (Annotated[int, Path(description="Workspace id")]): Workspace id.
         lead_id (Annotated[int, Path(ge=1, description="Lead number")]): Lead number.
@@ -93,6 +96,7 @@ async def create_lead(workspace_id: int, body: LeadIn) -> LeadOut:
     """TODO: summary.
 
     \f
+
     Args:
         workspace_id (int): TODO: description.
         body (LeadIn): TODO: description.
@@ -108,6 +112,7 @@ async def delete_lead(lead_id: int) -> None:
     """TODO: summary.
 
     \f
+
     Args:
         lead_id (int): TODO: description.
     """

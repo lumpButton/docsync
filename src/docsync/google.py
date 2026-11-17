@@ -468,11 +468,13 @@ def _managed_block(
 
 
 def _join(blocks: list[Block]) -> list[str]:
-    """Blocks to lines: one blank line between blocks, none right after ``\\f``."""
+    """Blocks to lines: one blank line between blocks, ``\\f`` included."""
     out: list[str] = []
     previous: Block | None = None
     for block in blocks:
-        if previous is not None and previous.kind != "form_feed":
+        # also after \f: ruff does not see a section that starts right on the next line
+        # (DOC201 then reports a documented return as missing)
+        if previous is not None:
             out.append("")
         if block.kind == "form_feed":
             out.append(FORM_FEED)

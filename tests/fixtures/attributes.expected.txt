@@ -100,6 +100,7 @@ class LeadIn(BaseModel):
     """TODO: summary.
 
     \f
+
     Attributes:
         model_config: Pydantic model configuration.
         name (str): TODO: description.

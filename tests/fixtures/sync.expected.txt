@@ -11,6 +11,7 @@ class LeadOut(BaseModel):
     """Lead as the cabinet shows it.
 
     \f
+
     Attributes:
         id (int): Lead number inside the workspace.
         status (str): Workflow status: new, taken or closed.
@@ -39,6 +40,7 @@ async def take_lead(
     The first member to press «Беру» wins; the others get 409.
 
     \f
+
     Args:
         lead_id (Annotated[int, Path(ge=1)]): Lead number from the card.
         member_id (str): TODO: description.

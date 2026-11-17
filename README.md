@@ -101,6 +101,7 @@ async def get_lead(
     """TODO: summary.
 
     \f
+
     Args:
         lead_id (Annotated[int, Path(ge=1, description="Lead number")]): Lead number.
         with_history (Annotated[bool, Query(description="Include lead events")]): Include lead
@@ -179,7 +180,7 @@ treat-property-methods-as-class-attributes = true
 ```yaml
 repos:
   - repo: https://github.com/lumpButton/docsync
-    rev: v0.2.2
+    rev: v0.2.3
     hooks:
       - id: docsync-fix
       - id: docsync-check

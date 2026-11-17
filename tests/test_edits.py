@@ -1,5 +1,6 @@
 import ast
 import json
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -125,7 +126,39 @@ def test_form_feed_only_for_models_that_reach_openapi() -> None:
     settings, lead = result.source.split("class LeadIn")
     assert "\\f" not in settings
     assert "        model_config: Pydantic model configuration.\n" in settings
-    assert '"""TODO: summary.\n\n    \\f\n    Attributes:' in lead
+    assert '"""TODO: summary.\n\n    \\f\n\n    Attributes:' in lead
+
+
+def test_ruff_sees_sections_after_form_feed(tmp_path: Path) -> None:
+    result: FixResult = _fix(
+        """\
+        @router.get("/health")
+        async def health() -> int:
+            return 1
+        """
+    )
+    module: Path = tmp_path / "m.py"
+    module.write_text('"""M."""\n\n\n' + result.source, encoding="utf-8")
+    ruff: subprocess.CompletedProcess[str] = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        [
+            sys.executable,
+            "-m",
+            "ruff",
+            "check",
+            "--isolated",
+            "--preview",
+            "--select",
+            "DOC201",
+            "--output-format",
+            "concise",
+            str(module),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "\\f\n\n    Returns:" in result.source
+    assert ruff.returncode == 0, ruff.stdout  # Returns is seen, so DOC201 stays quiet
 
 
 def test_inline_bodies_are_split() -> None:
